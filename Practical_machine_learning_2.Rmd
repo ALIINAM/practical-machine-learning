@@ -1,0 +1,162 @@
+#Practical Machine Learning Course Project Write Up
+
+By Ali Inam (ali.inam03@gmail.com)
+Date: 26-06-2016
+
+#Background
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement – a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: http://groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset)."
+
+#Data
+
+The data for this project come from this source: http://groupware.les.inf.puc-rio.br/har. The information has been generously provided for use use in this cousera course by the authors, Velloso, E.; Bulling, A.; Gellersen, H.; Ugulino, W.; Fuks, H. They have allowed the use of their paper "Qualitative Activity Recognition of Weight Lifting Exercises. Proceedings of 4th International Conference in Cooperation with SIGCHI (Augmented Human '13) . Stuttgart, Germany: ACM SIGCHI, 2013.
+
+The training data for this project are available here:
+
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
+
+The test data are available here:
+
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv
+
+Both were downloaded for use in this assignment on September 3, 2015 at 6:50am GMT + 8hours.
+
+#Choosing the prediction algorithm
+
+Steps Taken
+
+1.Tidy data. Remove columns with little/no data.
+
+2.Create Training and test data from traing data for cross validation checking
+
+3.Trial 3 methods Random Forrest, Gradient boosted model and Linear discriminant analysis
+
+4.Fine tune model through combinations of above methods, reduction of input variables or similar. The fine tuning will take into account accuracy first and speed of analysis second.
+
+```{r}
+library(ggplot2)
+library(caret)
+library(randomForest)
+library(e1071)
+library(gbm)
+library(doParallel)
+library(survival)
+library(splines)
+library(plyr)
+setwd('E:\\Coursera Data Science\\8-Practical Machine Learning')
+```
+
+#Load data
+1.Load data.
+2.Remove "#DIV/0!", replace with an NA value.
+
+```{r,cache=TRUE}
+training  <- read.csv('pml-training.csv');
+testing   <- read.csv('pml-testing.csv')
+
+dim(training)
+
+table(training$classe)
+```
+
+```{r}
+training <- training[, 6:dim(training)[2]]
+
+treshold <- dim(training)[1] * 0.95
+#Remove columns with more than 95% of NA or "" values
+goodColumns <- !apply(training, 2, function(x) sum(is.na(x)) > treshold  || sum(x=="") > treshold)
+
+training <- training[, goodColumns]
+
+badColumns <- nearZeroVar(training, saveMetrics = TRUE)
+
+training <- training[, badColumns$nzv==FALSE]
+
+training$classe = factor(training$classe)
+
+#Partition rows into training and crossvalidation
+inTrain <- createDataPartition(training$classe, p = 0.6)[[1]]
+crossv <- training[-inTrain,]
+training <- training[ inTrain,]
+inTrain <- createDataPartition(crossv$classe, p = 0.75)[[1]]
+crossv_test <- crossv[ -inTrain,]
+crossv <- crossv[inTrain,]
+
+
+testing <- testing[, 6:dim(testing)[2]]
+testing <- testing[, goodColumns]
+testing$classe <- NA
+testing <- testing[, badColumns$nzv==FALSE]
+```
+
+
+```{r,cache=TRUE}
+#Train Model
+
+mod1 <- randomForest(classe ~ ., data = training, importance = TRUE, ntrees = 10)
+pred1 <- predict(mod1, crossv)
+```
+
+```{r}
+#show confusion matrices
+confusionMatrix(pred1, crossv$classe)
+
+```
+
+```{r}
+#out-of-sample error
+pred1 <- predict(mod1, crossv_test)
+#pred3 <- predict(mod3, crossv_test)
+accuracy <- sum(pred1 == crossv_test$classe) / length(pred1)
+```
+
+Based on results, the Random Forest prediction was far better than either the GBM or lsa models. The RF model will be used as the sole prediction model. The confusion matrix created gives an accuracy of 99.5%. This is excellent.
+
+As a double check the out of sample error was calculated. This model achieved <b>99.52 %</b> accuracy on the validation set.
+
+#Fine Tuning
+
+Assess Number of relevant variables
+
+```{r}
+varImpRF <- randomForest(classe ~ ., data = training, importance = TRUE, ntrees = 10)
+varImpPlot(varImpRF,type = 2)
+```
+
+
+#Conclusion
+
+I stopped at this stage as the goal to be able to get the required answers and report the errors achieved with the model has been reached without any further fine tuning.
+
+The Random Forest method worked very well.
+
+The Confusion Matrix achieved 99.6% accuracy. The Out of Sample Error achieved 99.7449 %.
+
+This model will be used for the final calculations.
+
+The logic behind using the random forest method as the predictor rather than other methods or a combination of various methods is:
+
+1.Random forests are suitable when to handling a large number of inputs, especially when the interactions between variables are unknown.
+2.Random forest's built in cross-validation component that gives an unbiased estimate of the forest's out-of-sample (or bag) (OOB) error rate.
+3.A Random forest can handle unscaled variables and categorical variables. This is more forgiving with the cleaning of the data.
+
+
+#Prepare the submission. (using COURSERA provided code)
+
+```{r}
+pml_write_files = function(x){
+n = length(x)
+for(i in 1:n){
+filename = paste0("problem_id_",i,".txt")
+write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+}
+}
+x <- testing
+
+answers <- predict(mod1, newdata=x)
+answers
+
+```
+
+```{r}
+pml_write_files(answers)
+```
